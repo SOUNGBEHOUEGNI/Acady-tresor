@@ -67,17 +67,39 @@ def register_enseignant(request):
     return render(request, 'enseignant/register.html', context)
 
 
-from django.contrib import messages
-
 import random
+import re
 from django.utils import timezone
-from datetime import timedelta
-from django.core.mail import send_mail
+from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.core.mail import send_mail
 from django.conf import settings
 
 from .models import Enseignant
 
+# --- UTILITAIRE ENVOI EMAIL ---
+def envoyer_email(email, sujet, message, request=None):
+    """
+    Envoi un email et gère les exceptions.
+    """
+    try:
+        send_mail(
+            sujet,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False
+        )
+        if request:
+            messages.success(request, "✅ Email envoyé avec succès !")
+    except Exception as e:
+        if request:
+            messages.error(request, f"❌ Erreur lors de l'envoi de l'email : {e}")
+        else:
+            print("Erreur lors de l'envoi du mail :", e)
+
+
+# --- LOGIN ENSEIGNANT ---
 def enseignant_login(request):
     if request.method == 'POST':
         email = request.POST.get('email')
@@ -85,55 +107,104 @@ def enseignant_login(request):
 
         try:
             enseignant = Enseignant.objects.get(email=email)
-            
-            if password == enseignant.password:
+
+            if password == enseignant.password:  # ⚠️ Idéalement utiliser hash
                 otp_code = str(random.randint(100000, 999999))
                 enseignant.otp_code = otp_code
                 enseignant.otp_timestamp = timezone.now()
                 enseignant.save()
 
-                send_mail(
-                    'Code de connexion',
-                    f'Bonjour {enseignant.nom}, votre code de connexion est : {otp_code}',
-                    settings.DEFAULT_FROM_EMAIL,
-                    [enseignant.email]
+                envoyer_email(
+                    enseignant.email,
+                    "Code de connexion",
+                    f"Bonjour {enseignant.nom}, votre code de connexion est : {otp_code}",
+                    request=request
                 )
 
                 request.session['temp_enseignant_id'] = enseignant.id
-                messages.success(request, 'Un code a été envoyé à votre email. Il expire dans 120 secondes.')
+                messages.info(request, "Un code a été envoyé à votre email. Il expire dans 2 minutes.")
                 return redirect('enseignant_verification_otp')
-
             else:
-                messages.error(request, 'Mot de passe incorrect.')
+                messages.error(request, "Mot de passe incorrect.")
 
         except Enseignant.DoesNotExist:
-            messages.error(request, 'Aucun compte trouvé avec cet email.')
+            messages.error(request, "Aucun compte trouvé avec cet email.")
 
     return render(request, 'enseignant/login.html')
 
 
+# --- VERIFICATION OTP ---
+def enseignant_verification_otp(request):
+    enseignant_id = request.session.get('temp_enseignant_id')
+    if not enseignant_id:
+        messages.error(request, "Session expirée. Veuillez vous reconnecter.")
+        return redirect('enseignant_login')
+
+    enseignant = Enseignant.objects.get(id=enseignant_id)
+
+    if request.method == "POST":
+        code_saisi = request.POST.get('otp')
+        now = timezone.now()
+
+        if not enseignant.otp_code or not enseignant.otp_timestamp:
+            messages.error(request, "Pas de code OTP généré. Veuillez vous reconnecter.")
+            return redirect('enseignant_login')
+
+        delta = now - enseignant.otp_timestamp
+        if delta.total_seconds() > 120:  # 2 minutes
+            messages.warning(request, "Code expiré. Un nouveau code est envoyé.")
+            otp_code = str(random.randint(100000, 999999))
+            enseignant.otp_code = otp_code
+            enseignant.otp_timestamp = now
+            enseignant.save()
+            envoyer_email(
+                enseignant.email,
+                "Nouveau code de connexion",
+                f"Bonjour {enseignant.nom}, votre nouveau code est : {otp_code}",
+                request=request
+            )
+            return redirect('enseignant_verification_otp')
+
+        if code_saisi == enseignant.otp_code:
+            # Connexion réussie
+            request.session['enseignant_id'] = enseignant.id
+            request.session['enseignant_nom'] = f"{enseignant.nom} {enseignant.prenoms}"
+            request.session['enseignant_matiere'] = enseignant.matiere
+
+            # Nettoyer OTP
+            enseignant.otp_code = None
+            enseignant.otp_timestamp = None
+            enseignant.save()
+            del request.session['temp_enseignant_id']
+
+            messages.success(request, f"Bienvenue {enseignant.nom} !")
+            return redirect('dashboard_enseignant')
+        else:
+            messages.error(request, "Code incorrect.")
+
+    return render(request, "enseignant/verification_otp.html")
+
+
+# --- MOT DE PASSE OUBLIE ---
 def enseignant_mdp_oublie(request):
     if request.method == "POST":
         email = request.POST.get("email")
 
         try:
             enseignant = Enseignant.objects.get(email=email)
-
             otp = str(random.randint(100000, 999999))
             enseignant.otp_code = otp
             enseignant.otp_timestamp = timezone.now()
             enseignant.save()
 
-            send_mail(
+            envoyer_email(
+                email,
                 "Code de réinitialisation",
-                f"Votre code est : {otp}",
-                settings.DEFAULT_FROM_EMAIL,
-                [email],
-                fail_silently=False
+                f"Votre code de réinitialisation est : {otp}",
+                request=request
             )
 
             request.session["reset_enseignant_id"] = enseignant.id
-            messages.success(request, "Un code a été envoyé à votre email.")
             return redirect("enseignant_mdp_oublie_otp")
 
         except Enseignant.DoesNotExist:
@@ -141,32 +212,35 @@ def enseignant_mdp_oublie(request):
 
     return render(request, "enseignant/mdp_oublie_email.html")
 
+
+# --- VERIFICATION OTP POUR REINIT ---
 def enseignant_mdp_oublie_otp(request):
     enseignant_id = request.session.get("reset_enseignant_id")
-
-    if enseignant_id is None:
+    if not enseignant_id:
         return redirect("enseignant_mdp_oublie")
 
     enseignant = Enseignant.objects.get(id=enseignant_id)
 
     if request.method == "POST":
         otp = request.POST.get("otp")
-
-        # Vérifier OTP + expiration
-        if otp == enseignant.otp_code:
-            diff = timezone.now() - enseignant.otp_timestamp
-            if diff.total_seconds() <= 120:  # expire dans 2 min
-                return redirect("enseignant_mdp_oublie_reset")
-            else:
-                messages.error(request, "Le code a expiré.")
-        else:
+        if otp != enseignant.otp_code:
             messages.error(request, "Code incorrect.")
+            return redirect("enseignant_mdp_oublie_otp")
+
+        delta = timezone.now() - enseignant.otp_timestamp
+        if delta.total_seconds() > 120:
+            messages.error(request, "Le code a expiré.")
+            return redirect("enseignant_mdp_oublie")
+
+        # OTP correct et valide
+        return redirect("enseignant_mdp_oublie_reset")
 
     return render(request, "enseignant/mdp_oublie_otp.html")
 
-import re
 
+# --- REINITIALISATION MOT DE PASSE ---
 def password_is_valid(password):
+    """Vérifie qu'un mot de passe contient au moins 8 caractères, 1 majuscule et 1 chiffre"""
     return (
         len(password) >= 8 and
         re.search(r"[A-Z]", password) and
@@ -175,8 +249,7 @@ def password_is_valid(password):
 
 def enseignant_mdp_oublie_reset(request):
     enseignant_id = request.session.get("reset_enseignant_id")
-
-    if enseignant_id is None:
+    if not enseignant_id:
         return redirect("enseignant_mdp_oublie")
 
     enseignant = Enseignant.objects.get(id=enseignant_id)
@@ -190,82 +263,23 @@ def enseignant_mdp_oublie_reset(request):
             return redirect("enseignant_mdp_oublie_reset")
 
         if not password_is_valid(p1):
-            messages.error(request, 
+            messages.error(
+                request,
                 "❌ Le mot de passe doit contenir au minimum 8 caractères, "
-                "au moins 1 chiffre et 1 symbole."
+                "1 majuscule et 1 chiffre."
             )
             return redirect("enseignant_mdp_oublie_reset")
 
         enseignant.password = p1
         enseignant.otp_code = None
+        enseignant.otp_timestamp = None
         enseignant.save()
 
         del request.session["reset_enseignant_id"]
-
         messages.success(request, "✅ Mot de passe réinitialisé avec succès ! Connectez-vous.")
         return redirect("enseignant_login")
 
     return render(request, "enseignant/mdp_oublie_reset.html")
-
-
-from datetime import timedelta
-from django.utils import timezone
-
-def enseignant_verification_otp(request):
-    if request.method == "POST":
-        code_saisi = request.POST.get("otp")
-        enseignant_id = request.session.get("temp_enseignant_id")
-
-        if not enseignant_id:
-            messages.error(request, "Session expirée, veuillez vous reconnecter.")
-            return redirect("enseignant_login")
-
-        try:
-            enseignant = Enseignant.objects.get(id=enseignant_id)
-            now = timezone.now()  # toujours timezone-aware
-
-            # ✅ Vérifier que otp_timestamp est présent et timezone-aware
-            if enseignant.otp_code and enseignant.otp_timestamp:
-                delta = now - enseignant.otp_timestamp
-
-                if delta.total_seconds() <= 120:  # délai = 120 secondes
-                    if code_saisi == enseignant.otp_code:
-                        # ✅ Connexion réussie
-                        request.session['enseignant_id'] = enseignant.id
-                        request.session['enseignant_nom'] = f"{enseignant.nom} {enseignant.prenoms}"
-                        request.session['enseignant_matiere'] = enseignant.matiere
-
-                        # Supprimer OTP
-                        enseignant.otp_code = None
-                        enseignant.otp_timestamp = None
-                        enseignant.save()
-                        del request.session['temp_enseignant_id']
-
-                        messages.success(request, f"Bienvenue {enseignant.nom} {enseignant.prenoms} !")
-                        return redirect('dashboard_enseignant')
-                    else:
-                        messages.error(request, "Code incorrect.")
-                else:
-                    messages.error(request, "Code expiré. Un nouveau code est envoyé.")
-                    # Générer un nouveau code automatiquement
-                    otp_code = str(random.randint(100000, 999999))
-                    enseignant.otp_code = otp_code
-                    enseignant.otp_timestamp = timezone.now()
-                    enseignant.save()
-                    send_mail(
-                        'Nouveau code de connexion',
-                        f'Bonjour {enseignant.nom}, votre nouveau code de connexion est : {otp_code}',
-                        settings.DEFAULT_FROM_EMAIL,
-                        [enseignant.email],
-                        fail_silently=False,
-                    )
-            else:
-                messages.error(request, "Pas de code OTP généré. Veuillez vous reconnecter.")
-
-        except Enseignant.DoesNotExist:
-            messages.error(request, "Utilisateur introuvable.")
-
-    return render(request, "enseignant/verification_otp.html")
 
 from django.shortcuts import render, redirect
 from .models import Enseignant, Horaire
