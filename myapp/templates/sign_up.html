@@ -11,14 +11,7 @@
     <title>Inscription | Acadynote</title>
 
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
-
+        
         #particles-js {
             position: fixed;
             width: 100%;
@@ -27,20 +20,28 @@
             z-index: 0;
         }
 
-        .form-container {
-            position: relative;
-            z-index: 1;
-            background: rgba(255,255,255,0.1); 
-            padding: 2rem; 
-            border-radius: 10px; 
-            backdrop-filter: blur(10px);
-            box-shadow: 0px 0px 10px rgba(255, 255, 255, 0.2);
-            width: 350px;
-            color: white;
-            margin: auto;
-            top: 50%;
-            transform: translateY(-50%);
-        }
+        body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: Arial, sans-serif;
+    overflow-y: auto; /* autorise le scroll vertical */
+}
+
+.form-container {
+    position: relative;
+    z-index: 1;
+    background: rgba(255,255,255,0.1); 
+    padding: 2rem; 
+    border-radius: 10px; 
+    backdrop-filter: blur(10px);
+    box-shadow: 0px 0px 10px rgba(255, 255, 255, 0.2);
+    width: 350px;
+    color: white;
+    margin: 50px auto; /* espace depuis le haut, pas top 50% */
+    max-height: 90vh; /* limite hauteur pour écran */
+    overflow-y: auto;  /* ajoute le scroll si nécessaire */
+}
 
         .form-container h2 {
             text-align: center;
