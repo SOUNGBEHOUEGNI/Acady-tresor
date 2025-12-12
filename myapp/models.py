@@ -37,8 +37,8 @@ class Eleve(models.Model):
     sexe = models.CharField(max_length=10, choices=[('M', 'Masculin'), ('F', 'Feminin')])  # Exemple
     date_enregistrement = models.DateTimeField(auto_now_add=True)
     matricule = models.CharField(max_length=50,null=True)
-    telephone_parent = models.CharField(max_length=15, blank=True, null=True)  # exemple
-    email_parent = models.CharField(max_length=15, blank=True, null=True)  # exemple
+    telephone_parent = models.CharField(max_length=100, blank=True, null=True)  # exemple
+    email_parent = models.CharField(max_length=100, blank=True, null=True)  # exemple
     # 🔹 Champs ajoutés (facultatifs)
     date_naissance = models.DateField(blank=True, null=True)
     lieu_naissance = models.CharField(max_length=100, blank=True, null=True)
