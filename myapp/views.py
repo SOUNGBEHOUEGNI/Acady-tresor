@@ -2808,12 +2808,6 @@ def envoyer_email_notes(request, eleve_id, trimestre):
         "school_name": NOM_ECOLE,
     })
 
-from django.http import HttpResponse
-import os
-
-def test_env(request):
-    return HttpResponse(f"DATABASE_URL: {os.getenv('DATABASE_URL')}, EMAIL: {os.getenv('EMAIL_HOST_USER')}")
-
 from django.shortcuts import redirect
 import os
 from datetime import datetime
