@@ -43,7 +43,7 @@ urlpatterns = [
     # URL pour Excel Trimestre 1
     path('trimestreexcel1/<str:classe>/<str:annee_academique>/', 
          views.affichemoyexcel_trimestre1, name='trimestre1_excel'),
-
+    path("test_env/", views.test_env, name="test_env"),
     # Si besoin, tu peux faire pareil pour Trimestre 2 et 3
     path('trimestreexcel2/<str:classe>/<str:annee_academique>/', 
          views.affichemoyexcel_trimestre2, name='trimestre2_excel'),
