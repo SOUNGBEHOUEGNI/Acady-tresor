@@ -8,8 +8,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-default-key')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", ".onrender.com"]
 
+import os
+import dj_database_url
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise Exception("La variable d'environnement DATABASE_URL n'est pas définie !")
+
 DATABASES = {
-    'default': dj_database_url.parse(os.getenv('DATABASE_URL'))
+    "default": dj_database_url.parse(DATABASE_URL)
 }
 
 INSTALLED_APPS = [
