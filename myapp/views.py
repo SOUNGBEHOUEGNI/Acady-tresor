@@ -2572,21 +2572,20 @@ from .models import Eleve, Note
 load_dotenv()
 
 NOM_ECOLE = "LE TRESOR DE DOWA"
-
 def envoyer_sms_notes(request, classe, annee_academique):
-    # Récupérer le trimestre sélectionné
-    trimestre = int(request.GET.get("trimestre", 1))  # Par défaut trimestre 1
+    trimestre = int(request.GET.get("trimestre", 1))
 
-    # Récupérer tous les élèves de la classe et de l'année académique
     eleves = Eleve.objects.filter(classe=classe, annee_academique=annee_academique)
 
     if not eleves.exists():
-        return render(request, "sms.html", {"school_name": NOM_ECOLE,
-                                            "classe": classe,
-                                            "annee_academique": annee_academique,
-                                            "recap": []})
+        return render(request, "sms.html", {
+            "school_name": NOM_ECOLE,
+            "classe": classe,
+            "annee_academique": annee_academique,
+            "recap": [],
+        })
 
-    recap = []  # Pour stocker le statut d'envoi pour chaque élève
+    recap = []
 
     for eleve in eleves:
         status = {
@@ -2594,44 +2593,52 @@ def envoyer_sms_notes(request, classe, annee_academique):
             "email": eleve.email_parent,
             "sms": False,
             "email_sent": False,
-            "note_disponible": False
+            "note_disponible": False,
         }
 
-        # Vérifier les notes du trimestre
         notes = Note.objects.filter(eleve=eleve, trimestre=trimestre)
-        if notes.exists():
-            status["note_disponible"] = True
-        else:
+        if not notes.exists():
             recap.append(status)
-            continue  # passer au prochain élève si pas de notes
+            continue
 
-        # Préparer les matières et calculs
+        status["note_disponible"] = True
+
         matieres_status = {}
         for n in notes:
             if n.matiere not in matieres_status:
-                matieres_status[n.matiere] = {"interros": [], "devoirs": [], "moyenne_interros": 0,
-                                              "moyenne_devoirs": 0, "moyenne_generale": 0}
+                matieres_status[n.matiere] = {
+                    "interros": [],
+                    "devoirs": [],
+                    "moyenne_interros": 0,
+                    "moyenne_devoirs": 0,
+                    "moyenne_generale": 0,
+                }
+
             if n.type_note.startswith("interro"):
                 matieres_status[n.matiere]["interros"].append(n.valeur)
             elif n.type_note.startswith("devoir"):
                 matieres_status[n.matiere]["devoirs"].append(n.valeur)
 
-        for matiere, status_mat in matieres_status.items():
-            nb_interros = len(status_mat["interros"])
-            nb_devoirs = len(status_mat["devoirs"])
-            moy_interro = round(sum(status_mat["interros"]) / nb_interros, 2) if nb_interros else 0
-            moy_devoirs = round(sum(status_mat["devoirs"]) / nb_devoirs, 2) if nb_devoirs else 0
-            status_mat["moyenne_interros"] = moy_interro
-            status_mat["moyenne_devoirs"] = moy_devoirs
-            if moy_interro > 0:
-                if nb_devoirs > 1:
-                    status_mat["moyenne_generale"] = round((moy_interro + sum(status_mat["devoirs"])) / (1 + nb_devoirs), 2)
-                elif nb_devoirs == 1:
-                    status_mat["moyenne_generale"] = round((moy_interro + status_mat["devoirs"][0]) / 2, 2)
+        for matiere, m in matieres_status.items():
+            nb_i = len(m["interros"])
+            nb_d = len(m["devoirs"])
+
+            moy_i = round(sum(m["interros"]) / nb_i, 2) if nb_i else 0
+            moy_d = round(sum(m["devoirs"]) / nb_d, 2) if nb_d else 0
+
+            if moy_i > 0:
+                if nb_d > 1:
+                    moy_g = round((moy_i + sum(m["devoirs"])) / (1 + nb_d), 2)
+                elif nb_d == 1:
+                    moy_g = round((moy_i + m["devoirs"][0]) / 2, 2)
                 else:
-                    status_mat["moyenne_generale"] = moy_interro
+                    moy_g = moy_i
             else:
-                status_mat["moyenne_generale"] = moy_devoirs
+                moy_g = moy_d
+
+            m["moyenne_interros"] = moy_i
+            m["moyenne_devoirs"] = moy_d
+            m["moyenne_generale"] = moy_g
 
         moyenne_trimestrielle = notes.first().moyenne_trimestrielle or 0
         rang = notes.first().rang or "N/A"
@@ -2649,33 +2656,43 @@ def envoyer_sms_notes(request, classe, annee_academique):
 
         message_text = (
             f"{NOM_ECOLE}\n"
-            f"Résultats du trimestre {trimestre} - {eleve.nom} {eleve.prenoms} ({eleve.classe})\n"
-            f"Moyenne trimestrielle : {moyenne_trimestrielle}/20\n"
+            f"Résultats du trimestre {trimestre} - {eleve.nom} {eleve.prenoms}\n"
+            f"Moyenne : {moyenne_trimestrielle}/20\n"
             f"Rang : {rang}\n"
             f"Appréciation : {appreciation}\n\n"
-            "Merci de votre confiance et de votre soutien dans le suivi de votre enfant."
+            "Merci de votre confiance."
         )
 
-        # Envoi Email HTML
+        # ✅ ENVOI EMAIL (GMAIL SAFE)
         if eleve.email_parent:
             try:
                 html_content = render_to_string(
                     "notes_eleve.html",
-                    {"eleve": eleve,
-                     "matieres_status": matieres_status,
-                     "moyenne_trimestrielle": moyenne_trimestrielle,
-                     "rang": rang,
-                     "trimestre": trimestre,
-                     "appreciation": appreciation,
-                     "school_name": NOM_ECOLE})
-                subject = f"{NOM_ECOLE} - Résultats du trimestre {trimestre} ({eleve.nom})"
-                from_email = f"{NOM_ECOLE} <{os.getenv('EMAIL_HOST_USER')}>"
-                email = EmailMultiAlternatives(subject=subject, body=message_text,
-                                               from_email=from_email, to=[eleve.email_parent])
+                    {
+                        "eleve": eleve,
+                        "matieres_status": matieres_status,
+                        "moyenne_trimestrielle": moyenne_trimestrielle,
+                        "rang": rang,
+                        "trimestre": trimestre,
+                        "appreciation": appreciation,
+                        "school_name": NOM_ECOLE,
+                    }
+                )
+
+                email = EmailMultiAlternatives(
+                    subject=f"{NOM_ECOLE} - Résultats Trimestre {trimestre}",
+                    body=message_text,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[eleve.email_parent],
+                )
+
                 email.attach_alternative(html_content, "text/html")
-                email.send()
+                email.send(fail_silently=False)
+
                 status["email_sent"] = True
-            except:
+
+            except Exception as e:
+                print("ERREUR EMAIL :", e)
                 status["email_sent"] = False
 
         recap.append(status)
@@ -2685,34 +2702,25 @@ def envoyer_sms_notes(request, classe, annee_academique):
         "classe": classe,
         "annee_academique": annee_academique,
         "recap": recap,
-        "trimestre": trimestre
+        "trimestre": trimestre,
     })
-
-
 
 def envoyer_email_notes(request, eleve_id, trimestre):
     eleve = get_object_or_404(Eleve, id=eleve_id)
     trimestre = int(request.GET.get("trimestre", trimestre))
 
-    if not eleve.telephone_parent and not eleve.email_parent:
-        messages.error(request, f"Aucun numéro ou email enregistré pour {eleve.nom}.")
-        return render(request, "sms.html", {"eleve": eleve})
-
     notes = Note.objects.filter(eleve=eleve, trimestre=trimestre)
     if not notes.exists():
-        messages.error(request, f"Aucune note trouvée pour le trimestre {trimestre}.")
-        return render(request, "sms.html", {"eleve": eleve})
+        messages.error(request, "Aucune note disponible.")
+        return render(request, "email.html", {"eleve": eleve})
 
-    # Préparer les matières et leurs notes
     matieres_status = {}
+
     for n in notes:
         if n.matiere not in matieres_status:
             matieres_status[n.matiere] = {
                 "interros": [],
                 "devoirs": [],
-                "moyenne_interrogations": n.moyenne_interrogations if n.moyenne_interrogations else None,
-                "moyenne_devoirs": n.moyenne_devoirs if n.moyenne_devoirs else None,
-                "moyenne_generale": n.moyenne_generale if n.moyenne_generale else None,
                 "notes_obj": [],
             }
 
@@ -2723,105 +2731,84 @@ def envoyer_email_notes(request, eleve_id, trimestre):
         elif n.type_note.startswith("devoir"):
             matieres_status[n.matiere]["devoirs"].append(n.valeur)
 
-    # Calcul des moyennes SEULEMENT si non calculé avant
-    for matiere, status in matieres_status.items():
+    for matiere, m in matieres_status.items():
+        nb_i = len(m["interros"])
+        nb_d = len(m["devoirs"])
 
-        if (
-            status["moyenne_interrogations"] is not None and
-            status["moyenne_devoirs"] is not None and
-            status["moyenne_generale"] is not None
-        ):
-            continue  # Déjà calculé → on skip
+        moy_i = round(sum(m["interros"]) / nb_i, 2) if nb_i else 0
+        moy_d = round(sum(m["devoirs"]) / nb_d, 2) if nb_d else 0
 
-        nb_interros = len(status["interros"])
-        nb_devoirs = len(status["devoirs"])
-
-        # Moyenne interros & devoirs
-        moy_interro = round(sum(status["interros"]) / nb_interros, 2) if nb_interros else 0
-        moy_devoirs = round(sum(status["devoirs"]) / nb_devoirs, 2) if nb_devoirs else 0
-
-        # Moyenne générale EXACTEMENT comme ton ancien code
-        if moy_interro > 0:
-            if nb_devoirs > 1:
-                moyenne_generale = round((moy_interro + sum(status["devoirs"])) / (1 + nb_devoirs), 2)
-            elif nb_devoirs == 1:
-                moyenne_generale = round((moy_interro + status["devoirs"][0]) / 2, 2)
+        if moy_i > 0:
+            if nb_d > 1:
+                moy_g = round((moy_i + sum(m["devoirs"])) / (1 + nb_d), 2)
+            elif nb_d == 1:
+                moy_g = round((moy_i + m["devoirs"][0]) / 2, 2)
             else:
-                moyenne_generale = moy_interro
+                moy_g = moy_i
         else:
-            moyenne_generale = moy_devoirs
+            moy_g = moy_d
 
-        # Mise à jour des données calculées
-        status["moyenne_interrogations"] = moy_interro
-        status["moyenne_devoirs"] = moy_devoirs
-        status["moyenne_generale"] = moyenne_generale
+        for note in m["notes_obj"]:
+            note.moyenne_generale = moy_g
 
-        # Mise à jour BD
-        for note in status["notes_obj"]:
-            note.moyenne_interrogations = moy_interro
-            note.moyenne_devoirs = moy_devoirs
-            note.moyenne_generale = moyenne_generale
+        Note.objects.bulk_update(m["notes_obj"], ["moyenne_generale"])
 
-        Note.objects.bulk_update(
-            status["notes_obj"],
-            ["moyenne_interrogations", "moyenne_devoirs", "moyenne_generale"]
-        )
-
-    # Moyenne trimestrielle + rang
     moyenne_trimestrielle = notes.first().moyenne_trimestrielle or 0
     rang = notes.first().rang or "N/A"
 
-    # Appréciation trimestrielle
-    if moyenne_trimestrielle >= 16:
-        appreciation = "Très bien"
-    elif moyenne_trimestrielle >= 14:
-        appreciation = "Bien"
-    elif moyenne_trimestrielle >= 12:
-        appreciation = "Assez bien"
-    elif moyenne_trimestrielle >= 10:
-        appreciation = "Passable"
-    elif moyenne_trimestrielle >= 7:
-        appreciation = "Insuffisant"
-    else:  # 6 et moins
-        appreciation = "Faible"
-
-    # Message SMS
-    message_text = (
-        f"{NOM_ECOLE}\n"
-        f"Résultats du trimestre {trimestre} - {eleve.nom} {eleve.prenoms} ({eleve.classe})\n"
-        f"Moyenne trimestrielle : {moyenne_trimestrielle}/20\n"
-        f"Rang : {rang}\n"
-        f"Appréciation : {appreciation}\n\n"
-        "Merci de votre confiance."
+    appreciation = (
+        "Très bien" if moyenne_trimestrielle >= 16 else
+        "Bien" if moyenne_trimestrielle >= 14 else
+        "Assez bien" if moyenne_trimestrielle >= 12 else
+        "Passable" if moyenne_trimestrielle >= 10 else
+        "Insuffisant"
     )
 
-    # Envoi Email HTML
-    if eleve.email_parent:
-        try:
-            html_content = render_to_string(
-                "notes_eleve.html",
-                {
-                    "eleve": eleve,
-                    "matieres_status": matieres_status,
-                    "moyenne_trimestrielle": moyenne_trimestrielle,
-                    "rang": rang,
-                    "trimestre": trimestre,
-                    "appreciation": appreciation,
-                    "school_name": NOM_ECOLE,
-                },
-            )
-            subject = f"{NOM_ECOLE} - Résultats du trimestre {trimestre} ({eleve.nom})"
-            from_email = f"{NOM_ECOLE} <{os.getenv('EMAIL_HOST_USER')}>"
-            email = EmailMultiAlternatives(
-                subject=subject, body=message_text, from_email=from_email, to=[eleve.email_parent]
-            )
-            email.attach_alternative(html_content, "text/html")
-            email.send()
-            messages.success(request, f"Email envoyé à {eleve.email_parent}.")
-        except Exception as e:
-            messages.error(request, f"Erreur lors de l’envoi de l’email : {e}")
+    message_text = (
+        f"{NOM_ECOLE}\n"
+        f"Résultats du trimestre {trimestre} - {eleve.nom}\n"
+        f"Moyenne : {moyenne_trimestrielle}/20\n"
+        f"Rang : {rang}\n"
+        f"Appréciation : {appreciation}"
+    )
 
-    return render(request, "email.html", {"eleve": eleve, "school_name": NOM_ECOLE})
+    # ✅ EMAIL FINAL
+    try:
+        html_content = render_to_string(
+            "notes_eleve.html",
+            {
+                "eleve": eleve,
+                "matieres_status": matieres_status,
+                "moyenne_trimestrielle": moyenne_trimestrielle,
+                "rang": rang,
+                "trimestre": trimestre,
+                "appreciation": appreciation,
+                "school_name": NOM_ECOLE,
+            }
+        )
+
+        email = EmailMultiAlternatives(
+            subject=f"{NOM_ECOLE} - Résultats Trimestre {trimestre}",
+            body=message_text,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[eleve.email_parent],
+        )
+
+        email.attach_alternative(html_content, "text/html")
+        email.send(fail_silently=False)
+
+        messages.success(request, "Email envoyé avec succès.")
+
+    except Exception as e:
+        print("ERREUR EMAIL :", e)
+        messages.error(request, f"Erreur email : {e}")
+
+    return render(request, "email.html", {
+        "eleve": eleve,
+        "school_name": NOM_ECOLE,
+    })
+
+
 from django.shortcuts import redirect
 import os
 from datetime import datetime
