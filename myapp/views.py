@@ -2802,6 +2802,7 @@ def envoyer_email_notes(request, eleve_id, trimestre):
     except Exception as e:
         print("ERREUR EMAIL :", e)
         messages.error(request, f"Erreur email : {e}")
+        raise
 
     return render(request, "email.html", {
         "eleve": eleve,
