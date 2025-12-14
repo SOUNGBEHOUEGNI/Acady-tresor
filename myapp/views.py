@@ -2629,7 +2629,8 @@ def envoyer_sms_notes(request, classe, annee_academique):
                     to=[eleve.email_parent],
                 )
                 email.attach_alternative(html, "text/html")
-                email.send()
+                email.send(fail_silently=True)
+
 
                 status["email_sent"] = True
 
@@ -2692,7 +2693,8 @@ def envoyer_email_notes(request, eleve_id, trimestre):
             to=[eleve.email_parent],
         )
         email.attach_alternative(html, "text/html")
-        email.send()
+        email.send(fail_silently=True)
+
 
         messages.success(request, "Email envoyé avec succès.")
 
