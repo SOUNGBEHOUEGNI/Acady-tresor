@@ -1,25 +1,20 @@
 import os
 from pathlib import Path
 import dj_database_url
-from dotenv import load_dotenv
 
-# Charger le fichier .env
-load_dotenv()
-
-# Chemin du projet
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# ------------------------------------
-# Clé secrète & debug
-# ------------------------------------
+# =========================
+# SÉCURITÉ
+# =========================
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-default-key")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = ["*"]  # Adapter si domaine personnalisé
+ALLOWED_HOSTS = ["*", ".onrender.com"]
 
-# ------------------------------------
-# Applications
-# ------------------------------------
+# =========================
+# APPS
+# =========================
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -30,11 +25,12 @@ INSTALLED_APPS = [
     "myapp",
 ]
 
-# ------------------------------------
-# Middleware
-# ------------------------------------
+# =========================
+# MIDDLEWARE
+# =========================
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # ✅ IMPORTANT
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -43,15 +39,15 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# ------------------------------------
-# URL et WSGI
-# ------------------------------------
+# =========================
+# URLS / WSGI
+# =========================
 ROOT_URLCONF = "projet.urls"
 WSGI_APPLICATION = "projet.wsgi.application"
 
-# ------------------------------------
-# Templates
-# ------------------------------------
+# =========================
+# TEMPLATES
+# =========================
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -68,62 +64,60 @@ TEMPLATES = [
     },
 ]
 
-# ------------------------------------
-# Base de données
-# ------------------------------------
+# =========================
+# DATABASE
+# =========================
 DATABASES = {
     "default": dj_database_url.parse(
         os.getenv("DATABASE_URL"),
         conn_max_age=600,
-        ssl_require=True
+        ssl_require=True,
     )
 }
 
-# ------------------------------------
-# Mot de passe
-# ------------------------------------
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
-]
-
-# ------------------------------------
-# Internationalisation
-# ------------------------------------
+# =========================
+# LANGUE / TIMEZONE
+# =========================
 LANGUAGE_CODE = "fr-fr"
 TIME_ZONE = "Africa/Porto-Novo"
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
-# ------------------------------------
-# Fichiers statiques
-# ------------------------------------
+# =========================
+# STATIC FILES (🔥 BOOTSTRAP FIX)
+# =========================
 STATIC_URL = "/static/"
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",   # 👉 css/bootstrap.min.css ici
+]
+
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# =========================
+# MEDIA
+# =========================
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# ------------------------------------
-# Email
-# ------------------------------------
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+# =========================
+# EMAIL
+# =========================
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")
+EMAIL_HOST = os.getenv("EMAIL_HOST")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
-EMAIL_TIMEOUT = 20
 
-
-# ------------------------------------
-# Messages
-# ------------------------------------
+# =========================
+# MESSAGES
+# =========================
 from django.contrib.messages import constants as messages
+
 MESSAGE_TAGS = {
     messages.DEBUG: "debug",
     messages.INFO: "info",
