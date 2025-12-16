@@ -2639,99 +2639,71 @@ def envoyer_sms_notes(request, classe, annee_academique):
         "trimestre": trimestre,
     })
 
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.template.loader import render_to_string
 from django.contrib import messages
 from .models import Eleve, Note
 
-NOM_ECOLE = "LE TRESOR DE DOWA"
+def envoyer_email_notes(request, eleve_id, trimestre):
+    eleve = get_object_or_404(Eleve, id=eleve_id)
+    trimestre = int(request.GET.get("trimestre", trimestre))
+    notes = Note.objects.filter(eleve=eleve, trimestre=trimestre)
 
-def envoyer_sms_notes(request, classe, annee_academique):
-    trimestre = int(request.GET.get("trimestre", 1))
-    eleves = Eleve.objects.filter(classe=classe, annee_academique=annee_academique)
-    recap = []
+    if not notes.exists():
+        messages.error(request, "Aucune note disponible.")
+        return render(request, "email.html", {"eleve": eleve})
 
-    for eleve in eleves:
-        status = {
-            "eleve": eleve,
-            "email": eleve.email_parent,
-            "email_sent": False,
-            "note_disponible": False,
-        }
+    moyenne_trimestrielle = notes.first().moyenne_trimestrielle or 0
+    rang = notes.first().rang or "N/A"
 
-        notes = Note.objects.filter(eleve=eleve, trimestre=trimestre)
-        if not notes.exists():
-            recap.append(status)
-            continue
+    appreciation = (
+        "Très bien" if moyenne_trimestrielle >= 16 else
+        "Bien" if moyenne_trimestrielle >= 14 else
+        "Assez bien" if moyenne_trimestrielle >= 12 else
+        "Passable" if moyenne_trimestrielle >= 10 else
+        "Insuffisant"
+    )
 
-        status["note_disponible"] = True
-        matieres_status = {}
+    message_text = (
+        f"{NOM_ECOLE}\n"
+        f"Résultats Trimestre {trimestre}\n"
+        f"Moyenne : {moyenne_trimestrielle}/20\n"
+        f"Rang : {rang}\n"
+        f"Appréciation : {appreciation}"
+    )
 
-        for n in notes:
-            matieres_status.setdefault(n.matiere, {"interros": [], "devoirs": []})
-            if n.type_note.startswith("interro"):
-                matieres_status[n.matiere]["interros"].append(n.valeur)
-            elif n.type_note.startswith("devoir"):
-                matieres_status[n.matiere]["devoirs"].append(n.valeur)
-
-        moyenne_trimestrielle = notes.first().moyenne_trimestrielle or 0
-        rang = notes.first().rang or "N/A"
-
-        appreciation = (
-            "Très bien" if moyenne_trimestrielle >= 16 else
-            "Bien" if moyenne_trimestrielle >= 14 else
-            "Assez bien" if moyenne_trimestrielle >= 12 else
-            "Passable" if moyenne_trimestrielle >= 10 else
-            "Insuffisant"
+    try:
+        html_content = render_to_string(
+            "notes_eleve.html",
+            {
+                "eleve": eleve,
+                "notes": notes,
+                "moyenne_trimestrielle": moyenne_trimestrielle,
+                "rang": rang,
+                "trimestre": trimestre,
+                "appreciation": appreciation,
+                "school_name": NOM_ECOLE,
+            }
         )
 
-        message_text = (
-            f"{NOM_ECOLE}\n"
-            f"Résultats Trimestre {trimestre}\n"
-            f"Élève : {eleve.nom} {eleve.prenoms}\n"
-            f"Moyenne : {moyenne_trimestrielle}/20\n"
-            f"Rang : {rang}\n"
-            f"Appréciation : {appreciation}"
+        envoyer_email_node_style(
+            subject=f"{NOM_ECOLE} - Résultats Trimestre {trimestre}",
+            text_body=message_text,
+            html_body=html_content,
+            to_email=eleve.email_parent,
         )
 
-        if eleve.email_parent:
-            try:
-                html_content = render_to_string(
-                    "notes_eleve.html",
-                    {
-                        "eleve": eleve,
-                        "matieres_status": matieres_status,
-                        "moyenne_trimestrielle": moyenne_trimestrielle,
-                        "rang": rang,
-                        "trimestre": trimestre,
-                        "appreciation": appreciation,
-                        "school_name": NOM_ECOLE,
-                    }
-                )
+        messages.success(request, "Email envoyé avec succès")
 
-                envoyer_email_node_style(
-                    subject=f"{NOM_ECOLE} - Résultats Trimestre {trimestre}",
-                    text_body=message_text,
-                    html_body=html_content,
-                    to_email=eleve.email_parent,
-                )
+    except Exception as e:
+        print("ERREUR EMAIL :", e)
+        messages.error(request, f"Erreur email : {e}")
 
-                status["email_sent"] = True
-
-            except Exception as e:
-                print("ERREUR EMAIL :", e)
-
-        recap.append(status)
-
-    return render(request, "sms.html", {
+    return render(request, "email.html", {
+        "eleve": eleve,
         "school_name": NOM_ECOLE,
-        "classe": classe,
-        "annee_academique": annee_academique,
-        "recap": recap,
-        "trimestre": trimestre,
     })
 
-from .models import Eleve, Note
 
 from django.shortcuts import redirect
 import os
